@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start":"npx nodemon src/index.js"
+    "start": "npx nodemon src/index.js"
   },
   "author": "Harshit",
   "license": "ISC",
@@ -15,6 +15,7 @@
     "express": "^5.1.0",
     "mongoose": "^8.16.0",
     "nodemon": "^3.1.10",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "uuid": "^11.1.0"
   }
 }
