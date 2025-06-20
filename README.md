@@ -143,7 +143,7 @@ PORT = 3000
 DB_URL = <YOUR MONGO DB URI>
 ```
 
-### 7. Start the Application
+### 5. Start the Application
 
 ```bash
 npm start
