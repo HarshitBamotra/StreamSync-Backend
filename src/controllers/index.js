@@ -105,6 +105,8 @@ async function getRoomInfo(req, res) {
 async function deleteRoom(req, res) {
     try {
         const { roomId } = req.params;
+        console.log(req.body);
+        
         const { userId } = req.body;
 
         const room = await RoomManager.findRoom(roomId);
@@ -121,7 +123,8 @@ async function deleteRoom(req, res) {
             .filter(p => p.socketId)
             .map(p => p.socketId);
             
-        const io = require('../config/server.config').getIo();
+        const { getIo } = require("../config/socket.config");    
+        const io = getIo();
         roomSockets.forEach(socketId => {
             io.to(socketId).emit('room-closed', { roomId, reason: 'Host ended the meeting' });
         });
