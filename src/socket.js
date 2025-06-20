@@ -1,5 +1,5 @@
 const { getIo } = require("./config/socket.config");
-const {RoomManager, UserManager} = require("./utils")
+const { RoomManager, UserManager } = require("./utils")
 const io = getIo();
 uuidv4 = require('uuid').v4;
 
@@ -59,24 +59,48 @@ io.on('connection', (socket) => {
         }
     });
 
+    // socket.on('offer', (data) => {
+    //     socket.to(data.target).emit('offer', {
+    //         offer: data.offer,
+    //         sender: socket.id
+    //     });
+    // });
+
+    // socket.on('answer', (data) => {
+    //     socket.to(data.target).emit('answer', {
+    //         answer: data.answer,
+    //         sender: socket.id
+    //     });
+    // });
+
+    // socket.on('ice-candidate', (data) => {
+    //     socket.to(data.target).emit('ice-candidate', {
+    //         candidate: data.candidate,
+    //         sender: socket.id
+    //     });
+    // });
+
     socket.on('offer', (data) => {
+        console.log(`Relaying offer from ${socket.id} to ${data.target}`);
         socket.to(data.target).emit('offer', {
-            offer: data.offer,
-            sender: socket.id
+            sender: socket.id, // or userId
+            offer: data.offer
         });
     });
 
     socket.on('answer', (data) => {
+        console.log(`Relaying answer from ${socket.id} to ${data.target}`);
         socket.to(data.target).emit('answer', {
-            answer: data.answer,
-            sender: socket.id
+            sender: socket.id, // or userId  
+            answer: data.answer
         });
     });
 
     socket.on('ice-candidate', (data) => {
+        console.log(`Relaying ICE candidate from ${socket.id} to ${data.target}`);
         socket.to(data.target).emit('ice-candidate', {
-            candidate: data.candidate,
-            sender: socket.id
+            sender: socket.id, // or userId
+            candidate: data.candidate
         });
     });
 
@@ -210,12 +234,12 @@ io.on('connection', (socket) => {
                 const participant = room.participants.find(p => p.id === currentUser.id);
 
                 if (participant) {
-                    
+
                     if (participant.isHost) {
                         const otherParticipants = room.participants.filter(p => !p.isHost && p.id !== currentUser.id);
 
                         if (otherParticipants.length > 0) {
-                            
+
                             const newHost = otherParticipants[0];
                             await RoomManager.changeHost(currentRoomId, newHost.id);
 
