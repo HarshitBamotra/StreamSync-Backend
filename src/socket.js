@@ -1,6 +1,7 @@
 const { getIo } = require("./config/socket.config");
 const {RoomManager, UserManager} = require("./utils")
 const io = getIo();
+uuidv4 = require('uuid').v4;
 
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
