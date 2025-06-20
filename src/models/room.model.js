@@ -1,23 +1,54 @@
 const mongoose = require('mongoose');
 
 const participantSchema = new mongoose.Schema({
-    userId: String,
-    name: String,
-    isHost: Boolean,
-    socketId: String,
-    joinedAt: Date,
-    isAudioMuted: Boolean,
-    isVideoEnabled: Boolean,
-    isScreenSharing: Boolean
+    id: {
+        type: String,
+        required: true
+    },
+    name: { 
+        type: String, 
+        required: true 
+    },
+    isHost: { 
+        type: Boolean, 
+        default: false 
+    },
+    socketId: { 
+        type: String, 
+        default: null 
+    },
+    joinedAt: { 
+        type: Date, 
+        default: Date.now 
+    },
+    isAudioMuted: { 
+        type: Boolean, 
+        default: true 
+    },
+    isVideoEnabled: { 
+        type: Boolean, 
+        default: false 
+    },
+    isScreenSharing: { 
+        type: Boolean, 
+        default: false 
+    }
 });
 
 const roomSchema = new mongoose.Schema({
-    roomId: { 
+    id: { 
         type: String, 
+        required: true, 
         unique: true 
     },
-    hostId: String,
-    hostName: String,
+    hostId: { 
+        type: String, 
+        required: true 
+    },
+    hostName: { 
+        type: String, 
+        required: true 
+    },
     participants: [participantSchema],
     createdAt: { 
         type: Date, 
@@ -26,6 +57,10 @@ const roomSchema = new mongoose.Schema({
     isActive: { 
         type: Boolean, 
         default: true 
+    },
+    lastActivity: { 
+        type: Date, 
+        default: Date.now 
     }
 });
 

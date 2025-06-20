@@ -6,6 +6,7 @@ const socketIo = require('socket.io');
 
 const connectToDB = require("./config/db.config");
 const {PORT} = require("./config/server.config");
+const {setIo} = require("./config/socket.config");
 const apiRouter = require("./routes");
 
 const app = express();
@@ -16,6 +17,8 @@ const io = socketIo(server, {
     methods: ["GET", "POST"]
   }
 });
+
+setIo(io);
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({extended: true})); 

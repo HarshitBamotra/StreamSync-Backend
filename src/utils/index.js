@@ -1,14 +1,10 @@
-const { v4: uuidv4 } = require('uuid');
-
-function generateRoomId(){
-    return uuidv4();
-}
-
-function generateUserId(){
-    return uuidv4();
-}
+const {generateRoomId, generateUserId} = require("./generateId");
+const RoomManager = require("./roomHelper");
+const UserManager = require("./userHelper");
 
 module.exports = {
     generateRoomId: generateRoomId,
-    generateUserId: generateUserId
+    generateUserId: generateUserId,
+    RoomManager: RoomManager,
+    UserManager: UserManager
 }
