@@ -120,7 +120,8 @@ async function deleteRoom(req, res) {
         const roomSockets = room.participants
             .filter(p => p.socketId)
             .map(p => p.socketId);
-
+            
+        const io = require('../socket').getIo();
         roomSockets.forEach(socketId => {
             io.to(socketId).emit('room-closed', { roomId, reason: 'Host ended the meeting' });
         });
