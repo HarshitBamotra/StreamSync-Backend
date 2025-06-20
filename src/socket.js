@@ -1,37 +1,38 @@
 const { getIo } = require("./config/socket.config");
-const Room = require("./models/room.model");
-const User = require("./models/user.model");
+const {RoomManager, UserManager} = require("./utils")
 const io = getIo();
 
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
     let currentUser = null;
-    let currentRoom = null;
+    let currentRoomId = null;
 
-    socket.on('join-room', async (roomId, userId) => {
+    socket.on('join-room', async (data) => {
         try {
-            const room = await Room.findOne({ id: roomId, isActive: true });
-            if (!room) {
-                socket.emit('error', { message: 'Room not found' });
+            const { roomId, userId } = data;
+
+            const room = await RoomManager.findRoom(roomId);
+            const user = await UserManager.findUser(userId);
+
+            if (!room || !user) {
+                socket.emit('error', { message: 'Room or user not found' });
                 return;
             }
 
-            const participant = room.participants.find(p => p.userId === userId);
-            if (!participant) {
-                socket.emit('error', { message: 'User not in room' });
-                return;
-            }
+            await RoomManager.updateParticipantSocket(roomId, userId, socket.id);
 
-            participant.socketId = socket.id;
-
-            await room.save();
+            currentUser = user;
+            currentRoomId = roomId;
 
             socket.join(roomId);
 
+            const updatedRoom = await RoomManager.findRoom(roomId);
+            const participant = updatedRoom.participants.find(p => p.id === userId);
+
             socket.to(roomId).emit('user-joined', {
                 participant: {
-                    userId: participant.userId,
+                    id: participant.id,
                     name: participant.name,
                     isHost: participant.isHost,
                     joinedAt: participant.joinedAt
@@ -39,24 +40,24 @@ io.on('connection', (socket) => {
             });
 
             socket.emit('room-participants', {
-                participants: room.participants.map(p => ({
-                    userId: p.userId,
+                participants: updatedRoom.participants.map(p => ({
+                    id: p.id,
                     name: p.name,
                     isHost: p.isHost,
+                    joinedAt: p.joinedAt,
                     isAudioMuted: p.isAudioMuted,
                     isVideoEnabled: p.isVideoEnabled,
                     isScreenSharing: p.isScreenSharing
                 }))
             });
 
-            console.log(`User ${participant.name} joined room ${roomId}`);
+            console.log(`User ${user.name} joined room ${roomId}`);
         } catch (error) {
             console.error('Error joining room:', error);
             socket.emit('error', { message: 'Failed to join room' });
         }
     });
 
-    // WebRTC signaling
     socket.on('offer', (data) => {
         socket.to(data.target).emit('offer', {
             offer: data.offer,
@@ -78,53 +79,44 @@ io.on('connection', (socket) => {
         });
     });
 
-    // Media controls
+    socket.on('toggle-audio', async (data) => {
+        if (currentRoomId && currentUser) {
+            const participant = await RoomManager.updateParticipantStatus(currentRoomId, currentUser.id, {
+                isAudioMuted: data.isAudioMuted
+            });
 
-    socket.on('toggle-audio', async ({ roomId, userId, isAudioMuted }) => {
-        const room = await Room.findOne({ roomId: roomId });
-        if (!room) {
-            socket.emit('error', { message: 'Room not found' });
-            return;
+            if (participant) {
+                socket.to(currentRoomId).emit('participant-audio-toggle', {
+                    userId: currentUser.id,
+                    isAudioMuted: data.isAudioMuted
+                });
+            }
         }
-
-        const participant = room.participants.find(p => p.id === userId);
-        if (!participant) {
-            socket.emit('error', { message: 'participant not found' });
-            return;
-        }
-
-        participant.isAudioMuted = isAudioMuted;
-        await room.save();
-
-        socket.to(roomId).emit('participant-audio-toggle', { userId, isAudioMuted });
     });
 
-    socket.on('toggle-video', async ({ roomId, userId, isVideoEnabled }) => {
-        const room = await Room.findOne({ roomId: roomId });
-        if (!room) {
-            socket.emit('error', { message: 'Room not found' });
-            return;
-        }
+    socket.on('toggle-video', async (data) => {
+        if (currentRoomId && currentUser) {
+            const participant = await RoomManager.updateParticipantStatus(currentRoomId, currentUser.id, {
+                isVideoEnabled: data.isVideoEnabled
+            });
 
-        const participant = room.participants.find(p => p.userId === userId);
-        if (!participant) {
-            socket.emit('error', { message: 'participant not found' });
-            return;
+            if (participant) {
+                socket.to(currentRoomId).emit('participant-video-toggle', {
+                    userId: currentUser.id,
+                    isVideoEnabled: data.isVideoEnabled
+                });
+            }
         }
-
-        participant.isVideoEnabled = isVideoEnabled;
-        await room.save();
-        socket.to(roomId).emit('participant-video-toggle', { userId, isVideoEnabled });
     });
 
-    socket.on('toggle-screen-share', (data) => {
-        if (currentRoom && currentUser) {
-            const participant = currentRoom.updateParticipantStatus(currentUser.id, {
+    socket.on('toggle-screen-share', async (data) => {
+        if (currentRoomId && currentUser) {
+            const participant = await RoomManager.updateParticipantStatus(currentRoomId, currentUser.id, {
                 isScreenSharing: data.isScreenSharing
             });
 
             if (participant) {
-                socket.to(currentRoom.id).emit('participant-screen-share-toggle', {
+                socket.to(currentRoomId).emit('participant-screen-share-toggle', {
                     userId: currentUser.id,
                     isScreenSharing: data.isScreenSharing
                 });
@@ -132,20 +124,22 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Kick participant (host only)
-    socket.on('kick-participant', (data) => {
+    socket.on('kick-participant', async (data) => {
         try {
-            if (!currentRoom || !currentUser) {
+            if (!currentRoomId || !currentUser) {
                 socket.emit('error', { message: 'Not in a room' });
                 return;
             }
 
-            if (!currentRoom.isHost(currentUser.id)) {
+            const isHostUser = await RoomManager.isHost(currentRoomId, currentUser.id);
+            if (!isHostUser) {
                 socket.emit('error', { message: 'Only host can kick participants' });
                 return;
             }
 
-            const targetParticipant = currentRoom.getParticipant(data.userId);
+            const room = await RoomManager.findRoom(currentRoomId);
+            const targetParticipant = room.participants.find(p => p.id === data.userId);
+
             if (!targetParticipant) {
                 socket.emit('error', { message: 'Participant not found' });
                 return;
@@ -156,20 +150,17 @@ io.on('connection', (socket) => {
                 return;
             }
 
-            // Remove participant
-            currentRoom.removeParticipant(data.userId);
-            users.delete(data.userId);
+            await RoomManager.removeParticipant(currentRoomId, data.userId);
+            await UserManager.deleteUser(data.userId);
 
-            // Notify kicked user
             if (targetParticipant.socketId) {
                 io.to(targetParticipant.socketId).emit('kicked', {
                     reason: data.reason || 'You have been removed from the room'
                 });
-                io.sockets.sockets.get(targetParticipant.socketId)?.leave(currentRoom.id);
+                io.sockets.sockets.get(targetParticipant.socketId)?.leave(currentRoomId);
             }
 
-            // Notify other participants
-            socket.to(currentRoom.id).emit('participant-kicked', {
+            socket.to(currentRoomId).emit('participant-kicked', {
                 userId: data.userId,
                 participantName: targetParticipant.name
             });
@@ -179,16 +170,15 @@ io.on('connection', (socket) => {
                 participantName: targetParticipant.name
             });
 
-            console.log(`User ${targetParticipant.name} was kicked from room ${currentRoom.id}`);
+            console.log(`User ${targetParticipant.name} was kicked from room ${currentRoomId}`);
         } catch (error) {
             console.error('Error kicking participant:', error);
             socket.emit('error', { message: 'Failed to kick participant' });
         }
     });
 
-    // Chat messages
     socket.on('chat-message', (data) => {
-        if (currentRoom && currentUser) {
+        if (currentRoomId && currentUser) {
             const message = {
                 id: uuidv4(),
                 userId: currentUser.id,
@@ -197,64 +187,63 @@ io.on('connection', (socket) => {
                 timestamp: new Date().toISOString()
             };
 
-            // Broadcast to all participants in room
-            io.to(currentRoom.id).emit('chat-message', message);
+            io.to(currentRoomId).emit('chat-message', message);
         }
     });
 
-    // Leave room
     socket.on('leave-room', () => {
         handleUserLeave();
     });
 
-    // Handle disconnect
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
         handleUserLeave();
     });
 
-    function handleUserLeave() {
-        if (currentRoom && currentUser) {
-            const participant = currentRoom.getParticipant(currentUser.id);
+    async function handleUserLeave() {
+        if (currentRoomId && currentUser) {
+            try {
+                const room = await RoomManager.findRoom(currentRoomId);
+                if (!room) return;
 
-            if (participant) {
-                // If host is leaving, transfer host to another participant or close room
-                if (participant.isHost) {
-                    const otherParticipants = currentRoom.getAllParticipants()
-                        .filter(p => !p.isHost && p.id !== currentUser.id);
+                const participant = room.participants.find(p => p.id === currentUser.id);
 
-                    if (otherParticipants.length > 0) {
-                        // Transfer host to first available participant
-                        const newHost = otherParticipants[0];
-                        currentRoom.changeHost(newHost.id);
+                if (participant) {
+                    
+                    if (participant.isHost) {
+                        const otherParticipants = room.participants.filter(p => !p.isHost && p.id !== currentUser.id);
 
-                        // Notify all participants about host change
-                        io.to(currentRoom.id).emit('host-changed', {
-                            newHostId: newHost.id,
-                            newHostName: newHost.name
-                        });
-                    } else {
-                        // No other participants, close room
-                        currentRoom.isActive = false;
-                        rooms.delete(currentRoom.id);
+                        if (otherParticipants.length > 0) {
+                            
+                            const newHost = otherParticipants[0];
+                            await RoomManager.changeHost(currentRoomId, newHost.id);
+
+                            io.to(currentRoomId).emit('host-changed', {
+                                newHostId: newHost.id,
+                                newHostName: newHost.name
+                            });
+                        } else {
+                            await RoomManager.deactivateRoom(currentRoomId);
+                        }
                     }
+
+                    await RoomManager.removeParticipant(currentRoomId, currentUser.id);
+                    await UserManager.deleteUser(currentUser.id);
+
+                    socket.to(currentRoomId).emit('user-left', {
+                        userId: currentUser.id,
+                        userName: currentUser.name
+                    });
+
+                    console.log(`User ${currentUser.name} left room ${currentRoomId}`);
                 }
 
-                // Remove participant
-                currentRoom.removeParticipant(currentUser.id);
-                users.delete(currentUser.id);
-
-                // Notify others
-                socket.to(currentRoom.id).emit('user-left', {
-                    userId: currentUser.id,
-                    userName: currentUser.name
-                });
-
-                console.log(`User ${currentUser.name} left room ${currentRoom.id}`);
+                socket.leave(currentRoomId);
+            } catch (error) {
+                console.error('Error handling user leave:', error);
             }
 
-            socket.leave(currentRoom.id);
-            currentRoom = null;
+            currentRoomId = null;
             currentUser = null;
         }
     }

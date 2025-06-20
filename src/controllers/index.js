@@ -137,3 +137,10 @@ async function deleteRoom(req, res) {
         res.status(500).json({ error: 'Failed to delete room' });
     }
 }
+
+module.exports = {
+    createRoom: createRoom,
+    joinRoom: joinRoom,
+    getRoomInfo: getRoomInfo,
+    deleteRoom: deleteRoom
+}
